@@ -98,6 +98,60 @@ function cleanJobTitles(jobTitles) {
     return cleanText.substring(0, 150).trim() || 'Contact company for current openings';
 }
 
+function cleanText(text) {
+    if (!text) return '';
+    
+    return text
+        .replace(/[\r\n\t]+/g, ' ')  // Remove line breaks and tabs
+        .replace(/"/g, '""')  // Escape quotes for CSV
+        .replace(/\s+/g, ' ')  // Clean multiple spaces
+        .trim()
+        .substring(0, 500); // Reasonable limit
+}
+
+function cleanAddress(address) {
+    if (!address) return '';
+    
+    // If address looks like a company description (too long), truncate or clean
+    if (address.length > 200 || address.includes('specialized') || address.includes('innovation')) {
+        // Try to extract just location info
+        const locationPatterns = [
+            /([A-Z][a-z]+,\s*[A-Z]{2}\s*\d{5})/,  // City, State ZIP
+            /([A-Z][a-z]+,\s*[A-Z]{2})/,  // City, State
+            /(\d+\s+[^,]+,\s*[A-Z][a-z]+)/,  // Address, City
+            /([A-Z][a-z]+,\s*[A-Z][a-z]+)/  // City, Country
+        ];
+        
+        for (const pattern of locationPatterns) {
+            const match = address.match(pattern);
+            if (match) {
+                return cleanText(match[0]);
+            }
+        }
+        
+        // If no location pattern found, return truncated version
+        return cleanText(address.substring(0, 100) + '...');
+    }
+    
+    return cleanText(address);
+}
+
+function escapeCsvValue(value) {
+    if (!value && value !== 0) return '';
+    
+    const stringValue = String(value)
+        .replace(/[\r\n\t]+/g, ' ')  // Remove line breaks completely
+        .replace(/\s+/g, ' ')  // Clean multiple spaces
+        .trim();
+    
+    // If value contains commas, quotes, or newlines, wrap in quotes and escape internal quotes
+    if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+    }
+    
+    return stringValue;
+}
+
 async function processCSV(inputFile) {
     const results = [];
     const outputFile = inputFile.replace('.csv', '_CLEAN_FOR_OUTREACH.csv');
@@ -113,12 +167,12 @@ async function processCSV(inputFile) {
                 // Extract only essential outreach columns
                 const cleanRow = {
                     // Company Information
-                    'Company_Name': row['Company Name'] || row['name'] || '',
-                    'Website': row['website'] || row['Website'] || '',
-                    'LinkedIn': row['linkedin_url'] || row['LinkedIn'] || '',
-                    'Phone': row['Phone'] || '',
-                    'Address': row['Address'] || '',
-                    'Booth_Number': row['Booth Number'] || '',
+                    'Company_Name': cleanText(row['Company Name'] || row['name'] || ''),
+                    'Website': cleanText(row['website'] || row['Website'] || ''),
+                    'LinkedIn': cleanText(row['linkedin_url'] || row['LinkedIn'] || ''),
+                    'Phone': cleanText(row['Phone'] || ''),
+                    'Address': cleanAddress(row['Address'] || ''),
+                    'Booth_Number': cleanText(row['Booth Number'] || ''),
                     
                     // Company Size & Fit
                     'Employee_Count': row['employee_count'] || '',
@@ -128,9 +182,9 @@ async function processCSV(inputFile) {
                     // Funding Status (for prioritization)
                     'Has_Funding': row['has_funding_data'] || 'false',
                     'Recent_Funding_1yr': row['has_recent_funding_1yr'] || 'false',
-                    'Funding_Details': row['funding_details'] || '',
-                    'Last_Funding_Date': row['last_funding_date'] || '',
-                    'Total_Funding': row['total_funding'] || '',
+                    'Funding_Details': cleanText(row['funding_details'] || ''),
+                    'Last_Funding_Date': cleanText(row['last_funding_date'] || ''),
+                    'Total_Funding': cleanText(row['total_funding'] || ''),
                     
                     // Job & Hiring Status (for timing)
                     'Currently_Hiring': row['has_recent_jobs'] || 'false',
@@ -150,8 +204,8 @@ async function processCSV(inputFile) {
                     'Priority_Score': calculatePriorityScore(row),
                     
                     // Contact Information
-                    'Key_Contacts': row['Organization Members'] || '',
-                    'Profile_URLs': row['Member Profile URLs'] || ''
+                    'Key_Contacts': cleanText(row['Organization Members'] || ''),
+                    'Profile_URLs': cleanText(row['Member Profile URLs'] || '')
                 };
                 
                 results.push(cleanRow);
@@ -162,37 +216,47 @@ async function processCSV(inputFile) {
                 // Sort by priority score (highest first)
                 results.sort((a, b) => parseFloat(b.Priority_Score) - parseFloat(a.Priority_Score));
                 
-                // Create CSV writer
-                const csvWriter = createObjectCsvWriter({
-                    path: outputFile,
-                    header: [
-                        {id: 'Company_Name', title: 'Company Name'},
-                        {id: 'Website', title: 'Website'},
-                        {id: 'LinkedIn', title: 'LinkedIn'},
-                        {id: 'Phone', title: 'Phone'},
-                        {id: 'Address', title: 'Address'},
-                        {id: 'Booth_Number', title: 'Booth Number'},
-                        {id: 'Employee_Count', title: 'Employees'},
-                        {id: 'Employee_Range', title: 'Size Range'},
-                        {id: 'Priority_Score', title: 'Priority Score'},
-                        {id: 'Has_Funding', title: 'Has Funding'},
-                        {id: 'Recent_Funding_1yr', title: 'Recent Funding'},
-                        {id: 'Funding_Details', title: 'Funding Details'},
-                        {id: 'Total_Funding', title: 'Total Funding'},
-                        {id: 'Currently_Hiring', title: 'Currently Hiring'},
-                        {id: 'Has_Sales_Jobs', title: 'Sales Roles'},
-                        {id: 'Has_Marketing_Jobs', title: 'Marketing Roles'},
-                        {id: 'Has_BD_Jobs', title: 'BD Roles'},
-                        {id: 'Job_Titles', title: 'Recent Job Openings'},
-                        {id: 'Hiring_Urgency', title: 'Hiring Urgency'},
-                        {id: 'Key_Contacts', title: 'Key Contacts'},
-                        {id: 'Profile_URLs', title: 'Contact URLs'},
-                        {id: 'Data_Confidence', title: 'Data Quality'}
-                    ]
+                // Write CSV manually to ensure proper formatting
+                const headers = [
+                    'Company Name', 'Website', 'LinkedIn', 'Phone', 'Address', 'Booth Number', 
+                    'Employees', 'Size Range', 'Priority Score', 'Has Funding', 'Recent Funding',
+                    'Funding Details', 'Total Funding', 'Currently Hiring', 'Sales Roles', 
+                    'Marketing Roles', 'BD Roles', 'Recent Job Openings', 'Hiring Urgency',
+                    'Key Contacts', 'Contact URLs', 'Data Quality'
+                ];
+                
+                let csvContent = headers.join(',') + '\n';
+                
+                results.forEach(row => {
+                    const values = [
+                        escapeCsvValue(row.Company_Name),
+                        escapeCsvValue(row.Website),
+                        escapeCsvValue(row.LinkedIn),
+                        escapeCsvValue(row.Phone),
+                        escapeCsvValue(row.Address),
+                        escapeCsvValue(row.Booth_Number),
+                        escapeCsvValue(row.Employee_Count),
+                        escapeCsvValue(row.Employee_Range),
+                        escapeCsvValue(row.Priority_Score),
+                        escapeCsvValue(row.Has_Funding),
+                        escapeCsvValue(row.Recent_Funding_1yr),
+                        escapeCsvValue(row.Funding_Details),
+                        escapeCsvValue(row.Total_Funding),
+                        escapeCsvValue(row.Currently_Hiring),
+                        escapeCsvValue(row.Has_Sales_Jobs),
+                        escapeCsvValue(row.Has_Marketing_Jobs),
+                        escapeCsvValue(row.Has_BD_Jobs),
+                        escapeCsvValue(row.Job_Titles),
+                        escapeCsvValue(row.Hiring_Urgency),
+                        escapeCsvValue(row.Key_Contacts),
+                        escapeCsvValue(row.Profile_URLs),
+                        escapeCsvValue(row.Data_Confidence)
+                    ];
+                    csvContent += values.join(',') + '\n';
                 });
                 
                 try {
-                    await csvWriter.writeRecords(results);
+                    fs.writeFileSync(outputFile, csvContent, 'utf8');
                     console.log(`🎉 Clean outreach CSV created: ${outputFile}`);
                     
                     // Generate summary

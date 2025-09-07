@@ -5,8 +5,15 @@
  * Simple local web UI for processing exhibition company lists
  */
 
-// Load environment variables from parent directory
-require('dotenv').config({ path: '../.env' });
+// Load environment variables (for local development)
+// In production, environment variables are set by the deployment platform
+try {
+    if (process.env.NODE_ENV !== 'production') {
+        require('dotenv').config();
+    }
+} catch (error) {
+    console.log('Environment variables loaded from deployment platform');
+}
 
 const express = require('express');
 const multer = require('multer');
