@@ -1,0 +1,366 @@
+#!/usr/bin/env node
+
+/**
+ * Expo Pipeline Web Server
+ * Simple local web UI for processing exhibition company lists
+ */
+
+const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const csv = require('csv-parser');
+const { createObjectCsvWriter } = require('csv-writer');
+
+// Import pipeline modules
+const WebsiteFinder = require('./modules/website-finder');
+const LinkedInEnhancer = require('./modules/linkedin-enhancer');
+const EmployeeAnalyzer = require('./modules/employee-analyzer');
+const FundingAnalyzer = require('./modules/funding-analyzer');
+const JobAnalyzer = require('./modules/job-analyzer');
+const Consolidator = require('./modules/consolidator');
+
+const app = express();
+const PORT = 3000;
+
+// Configure file upload
+const upload = multer({
+    dest: 'uploads/',
+    limits: { fileSize: 50 * 1024 * 1024 } // 50MB max
+});
+
+// Serve static files
+app.use(express.static('public'));
+app.use(express.json());
+
+// Store processing status
+const processingStatus = new Map();
+
+// API Routes
+
+/**
+ * Upload and process CSV file
+ */
+app.post('/api/process', upload.single('csvFile'), async (req, res) => {
+    const sessionId = Date.now().toString();
+    const file = req.file;
+    
+    if (!file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    // Initialize processing status
+    processingStatus.set(sessionId, {
+        status: 'processing',
+        currentStage: 'loading',
+        stages: {
+            loading: { status: 'in_progress', message: 'Loading CSV file...' },
+            website: { status: 'pending', message: 'Website discovery' },
+            linkedin: { status: 'pending', message: 'LinkedIn enhancement' },
+            employee: { status: 'pending', message: 'Employee analysis' },
+            funding: { status: 'pending', message: 'Funding analysis' },
+            jobs: { status: 'pending', message: 'Job analysis' },
+            consolidation: { status: 'pending', message: 'Generating final CSV' }
+        },
+        progress: 0,
+        totalCompanies: 0,
+        processedCompanies: 0,
+        startTime: Date.now()
+    });
+    
+    // Start processing in background
+    processCSV(sessionId, file.path).catch(error => {
+        console.error('Processing error:', error);
+        const status = processingStatus.get(sessionId);
+        if (status) {
+            status.status = 'error';
+            status.error = error.message;
+        }
+    });
+    
+    res.json({ sessionId, message: 'Processing started' });
+});
+
+/**
+ * Get processing status
+ */
+app.get('/api/status/:sessionId', (req, res) => {
+    const status = processingStatus.get(req.params.sessionId);
+    
+    if (!status) {
+        return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    res.json(status);
+});
+
+/**
+ * Download processed file
+ */
+app.get('/api/download/:sessionId', (req, res) => {
+    const status = processingStatus.get(req.params.sessionId);
+    
+    if (!status || status.status !== 'complete') {
+        return res.status(404).json({ error: 'File not ready' });
+    }
+    
+    const filePath = status.outputFile;
+    
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'File not found' });
+    }
+    
+    res.download(filePath, path.basename(filePath));
+});
+
+/**
+ * Main CSV processing function
+ */
+async function processCSV(sessionId, filePath) {
+    const status = processingStatus.get(sessionId);
+    
+    try {
+        // Load CSV data
+        status.currentStage = 'loading';
+        const companies = await loadCSV(filePath);
+        status.totalCompanies = companies.length;
+        status.stages.loading.status = 'complete';
+        status.stages.loading.message = `Loaded ${companies.length} companies`;
+        
+        // Stage 1: Website Discovery (NEW)
+        status.currentStage = 'website';
+        status.stages.website.status = 'in_progress';
+        await processWebsites(companies, status);
+        status.stages.website.status = 'complete';
+        
+        // Stage 2: LinkedIn Enhancement
+        status.currentStage = 'linkedin';
+        status.stages.linkedin.status = 'in_progress';
+        await processLinkedIn(companies, status);
+        status.stages.linkedin.status = 'complete';
+        
+        // Stage 3: Employee Analysis (with filtering)
+        status.currentStage = 'employee';
+        status.stages.employee.status = 'in_progress';
+        await processEmployees(companies, status);
+        status.stages.employee.status = 'complete';
+        
+        // Stage 4: Funding Analysis
+        status.currentStage = 'funding';
+        status.stages.funding.status = 'in_progress';
+        await processFunding(companies, status);
+        status.stages.funding.status = 'complete';
+        
+        // Stage 5: Job Analysis
+        status.currentStage = 'jobs';
+        status.stages.jobs.status = 'in_progress';
+        await processJobs(companies, status);
+        status.stages.jobs.status = 'complete';
+        
+        // Stage 6: Generate Final CSV
+        status.currentStage = 'consolidation';
+        status.stages.consolidation.status = 'in_progress';
+        const outputFile = await generateFinalCSV(companies, sessionId);
+        status.stages.consolidation.status = 'complete';
+        status.stages.consolidation.message = 'Final CSV generated';
+        
+        // Mark as complete
+        status.status = 'complete';
+        status.outputFile = outputFile;
+        status.progress = 100;
+        status.endTime = Date.now();
+        status.processingTime = ((status.endTime - status.startTime) / 1000).toFixed(1);
+        
+        // Clean up uploaded file
+        fs.unlinkSync(filePath);
+        
+    } catch (error) {
+        status.status = 'error';
+        status.error = error.message;
+        throw error;
+    }
+}
+
+/**
+ * Load CSV file
+ */
+async function loadCSV(filePath) {
+    return new Promise((resolve, reject) => {
+        const companies = [];
+        
+        fs.createReadStream(filePath)
+            .pipe(csv())
+            .on('data', (row) => {
+                companies.push(row);
+            })
+            .on('end', () => {
+                resolve(companies);
+            })
+            .on('error', reject);
+    });
+}
+
+/**
+ * Process website discovery
+ */
+async function processWebsites(companies, status) {
+    const config = {
+        enable_search: true,
+        timeout_ms: 5000,
+        max_attempts: 3
+    };
+    
+    const apiSettings = {
+        rate_limit_ms: 500  // Faster for website searches
+    };
+    
+    const finder = new WebsiteFinder(config, apiSettings);
+    const result = await finder.process(companies);
+    
+    status.stages.website.message = `Found ${result.summary.successful} websites (${result.summary.successRate}% success)`;
+}
+
+/**
+ * Process LinkedIn enhancement
+ */
+async function processLinkedIn(companies, status) {
+    const config = {
+        web_search_fallback: true,
+        timeout_ms: 10000,
+        max_search_attempts: 2
+    };
+    
+    const apiSettings = {
+        rate_limit_ms: 1000
+    };
+    
+    const enhancer = new LinkedInEnhancer(config, apiSettings);
+    const result = await enhancer.process(companies);
+    
+    status.stages.linkedin.message = `Enhanced ${result.summary.successful} LinkedIn URLs (${result.summary.successRate}% success)`;
+}
+
+/**
+ * Process employee analysis
+ */
+async function processEmployees(companies, status) {
+    const config = {
+        target_range: { min: 11, max: 200 },
+        api_endpoint: 'company_pro'
+    };
+    
+    const apiSettings = {
+        rapidapi_key: process.env.rapid_api_key || '03f25c1267msh8befbf9f32825c5p104c76jsn952863a7ff5a',
+        rapidapi_host: 'linkedin-data-scraper.p.rapidapi.com',
+        rate_limit_ms: 1000
+    };
+    
+    const analyzer = new EmployeeAnalyzer(config, apiSettings);
+    const result = await analyzer.process(companies);
+    
+    // Companies array now contains only filtered companies
+    status.stages.employee.message = `Filtered to ${companies.length} companies in target range (from ${result.originalCount}, ${result.summary.successRate}% API success)`;
+}
+
+/**
+ * Process funding analysis
+ */
+async function processFunding(companies, status) {
+    const config = {
+        recent_threshold_months: 12,
+        api_endpoint: 'company_pro'
+    };
+    
+    const apiSettings = {
+        rapidapi_key: process.env.rapid_api_key || '03f25c1267msh8befbf9f32825c5p104c76jsn952863a7ff5a',
+        rapidapi_host: 'linkedin-data-scraper.p.rapidapi.com',
+        rate_limit_ms: 1000
+    };
+    
+    const analyzer = new FundingAnalyzer(config, apiSettings);
+    const result = await analyzer.process(companies);
+    
+    const withFunding = companies.filter(c => c.has_funding_data).length;
+    const recentFunding = companies.filter(c => c.has_recent_funding_1yr).length;
+    status.stages.funding.message = `Found ${withFunding} with funding (${recentFunding} recent, ${result.summary.successRate}% API success)`;
+}
+
+/**
+ * Process job analysis
+ */
+async function processJobs(companies, status) {
+    const config = {
+        recent_threshold_weeks: 3,
+        target_roles: ['sales', 'marketing', 'business development', 'account executive', 'account manager'],
+        api_endpoint: 'company_jobs'
+    };
+    
+    const apiSettings = {
+        rapidapi_key: process.env.rapid_api_key || '03f25c1267msh8befbf9f32825c5p104c76jsn952863a7ff5a',
+        rapidapi_host: 'linkedin-data-scraper.p.rapidapi.com',
+        rate_limit_ms: 1000
+    };
+    
+    const analyzer = new JobAnalyzer(config, apiSettings);
+    const result = await analyzer.process(companies);
+    
+    const withJobs = companies.filter(c => c.has_recent_jobs).length;
+    status.stages.jobs.message = `Found ${withJobs} companies with recent job postings (${result.summary.successRate}% API success)`;
+}
+
+/**
+ * Generate final CSV with all data
+ */
+async function generateFinalCSV(companies, sessionId) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const outputFile = path.join('results', `processed_${sessionId}_${timestamp}.csv`);
+    
+    // Ensure results directory exists
+    if (!fs.existsSync('results')) {
+        fs.mkdirSync('results', { recursive: true });
+    }
+    
+    // Calculate priority scores
+    companies.forEach(company => {
+        let score = 0;
+        if (company.in_target_range_11_200) score += 2;
+        if (company.has_recent_funding_1yr) score += 3;
+        if (company.has_sales_jobs) score += 2;
+        if (company.has_marketing_jobs) score += 2;
+        if (company.has_bd_jobs) score += 1;
+        company.priority_score = score;
+        company.processing_date = new Date().toISOString();
+        company.processing_notes = '';
+    });
+    
+    // Get all unique headers from all companies
+    const allHeaders = new Set();
+    companies.forEach(company => {
+        Object.keys(company).forEach(key => allHeaders.add(key));
+    });
+    
+    // Create CSV writer with all headers
+    const csvWriter = createObjectCsvWriter({
+        path: outputFile,
+        header: Array.from(allHeaders).map(key => ({ id: key, title: key }))
+    });
+    
+    await csvWriter.writeRecords(companies);
+    
+    return outputFile;
+}
+
+// Ensure directories exist
+['uploads', 'results'].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+});
+
+// Start server
+app.listen(PORT, () => {
+    console.log(`\n🚀 Expo Pipeline Server`);
+    console.log(`📍 Running at: http://localhost:${PORT}`);
+    console.log(`📂 Upload CSV files to process`);
+    console.log(`\nPress Ctrl+C to stop the server\n`);
+});

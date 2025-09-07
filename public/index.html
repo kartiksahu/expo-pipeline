@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expo Pipeline - Company Enrichment Tool</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Expo Pipeline</h1>
+            <p>Automated Company Enrichment & Analysis</p>
+        </header>
+
+        <!-- Upload Section -->
+        <div id="uploadSection" class="section">
+            <div class="upload-area" id="uploadArea">
+                <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <h2>Drop your CSV file here</h2>
+                <p>or click to browse</p>
+                <input type="file" id="fileInput" accept=".csv" hidden>
+                <div class="file-info" id="fileInfo"></div>
+            </div>
+            
+            <div class="requirements">
+                <h3>📋 Requirements</h3>
+                <ul>
+                    <li>CSV format with headers</li>
+                    <li>Required columns: <code>name</code>, <code>website</code></li>
+                    <li>Optional: <code>linkedin_url</code>, <code>description</code></li>
+                    <li>Max file size: 50MB</li>
+                </ul>
+            </div>
+
+            <button id="processBtn" class="btn btn-primary" disabled>
+                Start Processing
+            </button>
+        </div>
+
+        <!-- Processing Section -->
+        <div id="processingSection" class="section" style="display: none;">
+            <h2>🔄 Processing Your Data</h2>
+            
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <span class="progress-text" id="progressText">0%</span>
+            </div>
+
+            <div class="stages">
+                <div class="stage" id="stage-loading">
+                    <span class="stage-icon">📂</span>
+                    <div class="stage-info">
+                        <h4>Loading CSV</h4>
+                        <p class="stage-message">Preparing...</p>
+                    </div>
+                    <span class="stage-status"></span>
+                </div>
+
+                <div class="stage" id="stage-website">
+                    <span class="stage-icon">🌐</span>
+                    <div class="stage-info">
+                        <h4>Website Discovery</h4>
+                        <p class="stage-message">Finding company websites...</p>
+                    </div>
+                    <span class="stage-status"></span>
+                </div>
+
+                <div class="stage" id="stage-linkedin">
+                    <span class="stage-icon">🔗</span>
+                    <div class="stage-info">
+                        <h4>LinkedIn Enhancement</h4>
+                        <p class="stage-message">Finding LinkedIn URLs...</p>
+                    </div>
+                    <span class="stage-status"></span>
+                </div>
+
+                <div class="stage" id="stage-employee">
+                    <span class="stage-icon">👥</span>
+                    <div class="stage-info">
+                        <h4>Employee Analysis</h4>
+                        <p class="stage-message">Analyzing company sizes...</p>
+                    </div>
+                    <span class="stage-status"></span>
+                </div>
+
+                <div class="stage" id="stage-funding">
+                    <span class="stage-icon">💰</span>
+                    <div class="stage-info">
+                        <h4>Funding Analysis</h4>
+                        <p class="stage-message">Checking funding data...</p>
+                    </div>
+                    <span class="stage-status"></span>
+                </div>
+
+                <div class="stage" id="stage-jobs">
+                    <span class="stage-icon">💼</span>
+                    <div class="stage-info">
+                        <h4>Job Analysis</h4>
+                        <p class="stage-message">Scanning job postings...</p>
+                    </div>
+                    <span class="stage-status"></span>
+                </div>
+
+                <div class="stage" id="stage-consolidation">
+                    <span class="stage-icon">📊</span>
+                    <div class="stage-info">
+                        <h4>Final CSV Generation</h4>
+                        <p class="stage-message">Creating enriched dataset...</p>
+                    </div>
+                    <span class="stage-status"></span>
+                </div>
+            </div>
+
+            <div class="stats" id="stats">
+                <div class="stat">
+                    <span class="stat-label">Total Companies</span>
+                    <span class="stat-value" id="totalCompanies">0</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Processing Time</span>
+                    <span class="stat-value" id="processingTime">0s</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Current Stage</span>
+                    <span class="stat-value" id="currentStage">Loading</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="resultsSection" class="section" style="display: none;">
+            <div class="success-message">
+                <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                <h2>✅ Processing Complete!</h2>
+            </div>
+
+            <div class="results-summary" id="resultsSummary">
+                <!-- Summary will be inserted here -->
+            </div>
+
+            <div class="download-section">
+                <button id="downloadBtn" class="btn btn-success">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Download Enriched CSV
+                </button>
+                
+                <button id="newProcessBtn" class="btn btn-secondary">
+                    Process Another File
+                </button>
+            </div>
+
+            <div class="columns-added">
+                <h3>📝 New Columns Added</h3>
+                <div class="columns-grid">
+                    <div class="column-group">
+                        <h4>LinkedIn Enhancement</h4>
+                        <ul>
+                            <li><code>linkedin_url</code></li>
+                            <li><code>linkedin_source</code></li>
+                        </ul>
+                    </div>
+                    <div class="column-group">
+                        <h4>Employee Analysis</h4>
+                        <ul>
+                            <li><code>employee_count</code></li>
+                            <li><code>employee_range</code></li>
+                            <li><code>in_target_range_11_200</code></li>
+                            <li><code>employee_data_source</code></li>
+                        </ul>
+                    </div>
+                    <div class="column-group">
+                        <h4>Funding Analysis</h4>
+                        <ul>
+                            <li><code>has_funding_data</code></li>
+                            <li><code>has_recent_funding_1yr</code></li>
+                            <li><code>funding_details</code></li>
+                            <li><code>last_funding_date</code></li>
+                        </ul>
+                    </div>
+                    <div class="column-group">
+                        <h4>Job Analysis</h4>
+                        <ul>
+                            <li><code>has_recent_jobs</code></li>
+                            <li><code>has_sales_jobs</code></li>
+                            <li><code>has_marketing_jobs</code></li>
+                            <li><code>has_bd_jobs</code></li>
+                            <li><code>recent_job_titles</code></li>
+                            <li><code>job_posting_dates</code></li>
+                        </ul>
+                    </div>
+                    <div class="column-group">
+                        <h4>Scoring & Meta</h4>
+                        <ul>
+                            <li><code>priority_score</code></li>
+                            <li><code>processing_date</code></li>
+                            <li><code>processing_notes</code></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Section -->
+        <div id="errorSection" class="section error-section" style="display: none;">
+            <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <h2>❌ Processing Error</h2>
+            <p class="error-message" id="errorMessage"></p>
+            <button id="retryBtn" class="btn btn-secondary">Try Again</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

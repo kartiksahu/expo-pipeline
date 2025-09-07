@@ -1,0 +1,75 @@
+{
+  "expo_name": "Exhibition Name",
+  "description": "Exhibition processing configuration",
+  
+  "input": {
+    "required_columns": ["name", "website"],
+    "optional_columns": ["description", "linkedin_url"],
+    "skip_if_linkedin_exists": true
+  },
+  
+  "stages": {
+    "linkedin_enhancement": {
+      "enabled": true,
+      "web_search_fallback": true,
+      "max_search_attempts": 2,
+      "timeout_ms": 10000
+    },
+    
+    "employee_analysis": {
+      "enabled": true,
+      "target_range": {
+        "min": 11,
+        "max": 200
+      },
+      "api_endpoint": "company_pro",
+      "required_fields": ["employeeCount", "employeeCountRange"]
+    },
+    
+    "funding_analysis": {
+      "enabled": true,
+      "recent_threshold_months": 12,
+      "api_endpoint": "company_pro", 
+      "target_fields": [
+        "crunchbaseFundingData",
+        "total_funding",
+        "last_funding",
+        "funding_rounds"
+      ]
+    },
+    
+    "job_analysis": {
+      "enabled": true,
+      "recent_threshold_weeks": 3,
+      "target_roles": [
+        "sales",
+        "marketing", 
+        "business development",
+        "account executive",
+        "account manager"
+      ],
+      "api_endpoint": "company_jobs"
+    }
+  },
+  
+  "api_settings": {
+    "rapidapi_key": "${RAPIDAPI_KEY}",
+    "rapidapi_host": "linkedin-data-scraper.p.rapidapi.com",
+    "rate_limit_ms": 3000,
+    "batch_size": 10,
+    "max_retries": 2
+  },
+  
+  "output": {
+    "preserve_original_columns": true,
+    "add_processing_metadata": true,
+    "generate_summary_report": true,
+    "create_filtered_views": true
+  },
+  
+  "notifications": {
+    "enabled": false,
+    "email": "your-email@example.com",
+    "stages": ["completion", "errors"]
+  }
+}
